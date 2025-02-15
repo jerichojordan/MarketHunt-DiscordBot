@@ -79,7 +79,7 @@ async function preparePrice(item) {
     const SB = responseSB.data.find((data) => data.item_info.name === sbName);
     const SBPrice = SB?.latest_market_data?.price ? (price / SB.latest_market_data.price).toFixed(2) : "N/A";
 
-    return `**${item.item_info.name}** price: <:myemoji:${emojiGold}> ${formattedPrice} Gold / <:myemoji:${emojiSB}> ${SBPrice} SB\n(as of ${item.latest_market_data.date})`;
+    return `**${item.item_info.name}**\n<:myemoji:${emojiGold}> ${formattedPrice} Gold\n<:myemoji:${emojiSB}> ${SBPrice} SB\n(as of ${item.latest_market_data.date})`;
 }
 
 
