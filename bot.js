@@ -1,37 +1,61 @@
 require("dotenv").config();
-const { Client, GatewayIntentBits } = require("discord.js");
+const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } = require("discord.js");
 const axios = require("axios");
+
+// Custom emoji IDs (Upload these to your bot's server)
+const emojiSB = "1340310656439549972";
+const emojiGold = "1340310634113405008";
 
 const client = new Client({
     intents: [
-        GatewayIntentBits.Guilds, // Allows the bot to connect to servers
-        GatewayIntentBits.GuildMessages, // Allows reading messages in channels
-        GatewayIntentBits.MessageContent // Allows reading message content (needed for commands)
+        GatewayIntentBits.Guilds, // Required for slash commands
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent
     ],
 });
 
-// Fetch price data from API
+// 🔹 Define the `/price` command
+const commands = [
+    new SlashCommandBuilder()
+        .setName("price")
+        .setDescription("Get the price of an item from MarketHunt API")
+        .addStringOption(option =>
+            option.setName("item")
+                .setDescription("Name of the item")
+                .setRequired(true)
+        )
+].map(command => command.toJSON());
+
+const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
+
+// 🔹 Register the slash command
+(async () => {
+    try {
+        console.log("Registering slash commands...");
+        await rest.put(
+            Routes.applicationCommands(process.env.CLIENT_ID),
+            { body: commands }
+        );
+        console.log("✅ Slash commands registered!");
+    } catch (error) {
+        console.error("❌ Error registering commands:", error);
+    }
+})();
+
+// 🔹 Function to fetch price from API
 async function fetchPrice(itemName) {
     try {
         const url = `https://api.markethunt.win/items/search?query=${encodeURIComponent(itemName)}`;
         const response = await axios.get(url);
 
         if (Array.isArray(response.data) && response.data.length > 0) {
-            const item = response.data.find((data) => data.item_info.name === itemName);
-
+            const item = response.data.find((data) => data.item_info.name.toLowerCase() === itemName.toLowerCase());
             if (item && item.latest_market_data) {
-                const price = item.latest_market_data.price;
-
-                // Format the price with commas (e.g., 1,000,000)
-                const formattedPrice = price ? price.toLocaleString() : "No price available";
-                const urlSB = 'https://api.markethunt.win/items/search?query=SUPER|brie+';
-                const responseSB = await axios.get(urlSB);
-                const SB = responseSB.data.find((data) => data.item_info.name === "SUPER|brie+");
-                const SBPrice = (price/SB.latest_market_data.price).toFixed(2);
-
-                return `**${itemName}** price: ${formattedPrice} Gold\nSB price: ${SBPrice}\n(as of ${item.latest_market_data.date})`;
+                return preparePrice(item)
             } else {
-                return `No price available for **${itemName}**.`;
+                const itemAlt = response.data[0]
+                if (itemAlt) return preparePrice(itemAlt)
+                else return `No price available for **${itemName}**.`;
             }
         } else {
             return `Item **${itemName}** not found.`;
@@ -42,24 +66,39 @@ async function fetchPrice(itemName) {
     }
 }
 
-// Bot listens for messages
-client.on("messageCreate", async (message) => {
-    if (message.author.bot) return;
+async function preparePrice(item) {
+    const price = item.latest_market_data.price;
+    const formattedPrice = price.toLocaleString(); // Format as "1,000,000"
 
-    if (message.content.startsWith("!price")) {
-        const args = message.content.split(" ").slice(1);
-        if (args.length === 0) {
-            return message.reply("Please provide an item name. Example: `!price SUPER|brie+`");
+    // Fetch SB price
+    const urlSB = 'https://api.markethunt.win/items/search?query=SUPER|brie+';
+    const responseSB = await axios.get(urlSB);
+    const SB = responseSB.data.find((data) => data.item_info.name === "SUPER|brie+");
+    const SBPrice = SB ? (price / SB.latest_market_data.price).toFixed(2) : "N/A";
+
+    return `**${item.item_info.name}** price: <:myemoji:${emojiGold}> ${formattedPrice} Gold / <:myemoji:${emojiSB}> ${SBPrice} SB\n(as of ${item.latest_market_data.date})`;
+}
+
+// 🔹 Handle the `/price` command
+client.on("interactionCreate", async (interaction) => {
+    if (!interaction.isCommand()) return;
+
+    if (interaction.commandName === "price") {
+        await interaction.deferReply(); // Prevents timeout issues
+
+        const itemName = interaction.options.getString("item");
+        if (itemName) {
+            const priceMessage = await fetchPrice(itemName);
+            await interaction.editReply(priceMessage);
         }
-
-        const itemName = args.join(" ");
-        const priceMessage = await fetchPrice(itemName);
-        message.reply(priceMessage);
+        else {
+            await interaction.editReply("Please enter the name of an item");
+        }
     }
 });
 
 client.once("ready", () => {
-    console.log(`Bot is online!`);
+    console.log(`✅ Bot is online as ${client.user.tag}!`);
 });
 
-client.login(process.env.TOKEN); // Load token from .env file
+client.login(process.env.TOKEN);
