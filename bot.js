@@ -5,6 +5,9 @@ const axios = require("axios");
 // Custom emoji IDs (Upload these to your bot's server)
 const emojiSB = "1340310656439549972";
 const emojiGold = "1340310634113405008";
+const emojiUp= "📈";
+const emojiDown = "📉";
+const emojiNeutral ="➖";
 const sbName = "SUPER|brie+"
 
 const client = new Client({
@@ -54,7 +57,7 @@ async function fetchPrice(itemName) {
 
             const item = response.data.find((data) => data.item_info.name.toLowerCase() === itemName.toLowerCase());
 
-            if (item && item.latest_market_data) {
+            if (item) {
                 return preparePrice(item);
             } else {
                 const itemAlt = response.data[0];
@@ -71,16 +74,32 @@ async function fetchPrice(itemName) {
 }
 
 async function preparePrice(item) {
-    const price = item.latest_market_data.price;
-    const formattedPrice = price.toLocaleString();
+    const latestPrice = item.latest_market_data.price;
+    const formattedPrice = latestPrice.toLocaleString();
+    const latestSBPrice = item.latest_market_data.sb_price.toFixed(2);
+    const itemID = item.item_info.item_id;
 
-    const urlSB = `https://api.markethunt.win/items/search?query=${sbName}`;
-    const responseSB = await axios.get(urlSB);
-    const SB = responseSB.data.find((data) => data.item_info.name === sbName);
-    const SBPrice = SB?.latest_market_data?.price ? (price / SB.latest_market_data.price).toFixed(2) : "N/A";
+    // Fetch item history
+    const { data } = await axios.get(`https://api.markethunt.win/items/${itemID}`);
+    const secondLatestMarketData = data.market_data.at(-2);
 
-    return `**${item.item_info.name}**\n<:myemoji:${emojiGold}> ${formattedPrice} Gold\n<:myemoji:${emojiSB}> ${SBPrice} SB\n(as of ${item.latest_market_data.date})`;
+    // Calculate price change
+    const calcChange = (newPrice, oldPrice) =>
+        oldPrice ? (((newPrice - oldPrice) / oldPrice) * 100).toFixed(2) : "0.00";
+
+    const priceChange = calcChange(latestPrice, secondLatestMarketData.price);
+    const SBPriceChange = calcChange(latestSBPrice, secondLatestMarketData.sb_price);
+
+    // Determine price trend emoji
+    const getTrendEmoji = (change) =>
+        change > 0 ? emojiUp : change < 0 ? emojiDown : emojiNeutral;
+
+    return `**${item.item_info.name}**\n` +
+        `<:myemoji:${emojiGold}> ${formattedPrice} Gold ${getTrendEmoji(priceChange)}  (${priceChange}%)\n` +
+        `<:myemoji:${emojiSB}> ${latestSBPrice} SB ${getTrendEmoji(SBPriceChange)}  (${SBPriceChange}%)\n` +
+        `(as of ${item.latest_market_data.date})`;
 }
+
 
 
 // 🔹 Handle the `/price` command
